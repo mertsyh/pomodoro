@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport" />
+  <title>Pomodoro Focus</title>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: { "primary": "#ee652b", "background-dark": "#221510" },
+          fontFamily: { "display": ["Inter", "sans-serif"] },
+        },
+      },
+    }
+  </script>
+  <style>
+    #progress-ring circle { transition: stroke-dashoffset 0.25s ease; }
+    .task-done { opacity: 0.6; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    #app-dialog::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
+    #notes-modal::backdrop { background: rgba(0,0,0,.70); backdrop-filter: blur(4px); }
+    
+    /* Light theme select options */
+    .light #session-select option,
+    .light #session-select-modal option { 
+      color: #000; 
+      background: #fff; 
+    }
+    
+    /* Dark theme select options */
+    .dark #session-select option,
+    .dark #session-select-modal option { 
+      color: #fff; 
+      background: #1a1410; 
+    }
+    
+    @supports (padding: env(safe-area-inset-top)) {
+      body { padding-top: env(safe-area-inset-top); padding-bottom: calc(env(safe-area-inset-bottom) + 80px); }
+    }
+    
+    body:not(:has(@supports)) { padding-bottom: 80px; }
+    
+    /* Smooth transitions */
+    * { transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease; }
+    #progress-ring circle, button, .material-symbols-outlined { transition: none !important; }
+  </style>
+</head>
+
+<body class="relative flex h-screen w-full flex-col bg-white dark:bg-background-dark text-gray-900 dark:text-white font-display overflow-hidden selection:bg-primary/30">
+<div class="absolute inset-0 z-0 bg-gradient-to-br from-orange-50 via-white to-red-50 dark:from-[#2a2438] dark:via-[#181311] dark:to-[#0f0b09] opacity-100"></div>
+
+<div class="relative z-10 flex flex-col h-full w-full backdrop-blur-[1px]">
+  <header class="flex items-center justify-between px-3 sm:px-6 lg:px-10 py-3 sm:py-4 w-full z-50 border-b border-gray-200 dark:border-white/5">
+    <div class="flex items-center gap-2 sm:gap-4">
+      <div class="size-7 sm:size-8 flex items-center justify-center rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 shadow-inner">
+        <span class="material-symbols-outlined text-primary text-lg sm:text-xl">timer</span>
+      </div>
+      <h2 class="text-gray-900 dark:text-white text-sm sm:text-lg font-bold tracking-tight">Pomodoro</h2>
+    </div>
+
+    <div class="flex items-center gap-1.5 sm:gap-2 lg:gap-3">
+      <button id="theme-btn" class="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white text-xs transition-colors flex items-center gap-1 p-2 sm:p-1.5" title="Tema">
+        <span class="material-symbols-outlined text-base sm:text-sm" id="theme-icon">light_mode</span>
+        <span class="hidden lg:inline" id="theme-text">Açık</span>
+      </button>
+
+      <button id="sound-btn" class="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white text-xs transition-colors flex items-center gap-1 p-2 sm:p-1.5" title="Zil Sesi">
+        <span class="material-symbols-outlined text-base sm:text-sm" id="sound-icon">volume_up</span>
+        <span class="hidden lg:inline" id="sound-text">Ses Açık</span>
+      </button>
+
+      <button id="enable-notifications" class="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white text-xs transition-colors flex items-center gap-1 p-2 sm:p-1.5" title="Bildirimler">
+        <span class="material-symbols-outlined text-base sm:text-sm">notifications</span>
+        <span class="hidden lg:inline" id="notif-text">Bildirimler</span>
+      </button>
+
+      <button id="auto-start-btn" class="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white text-xs transition-colors flex items-center gap-1 p-2 sm:p-1.5" title="Otomatik Başlat">
+        <span class="material-symbols-outlined text-base sm:text-sm">play_circle</span>
+        <span id="auto-start-text" class="hidden lg:inline">Otomatik</span>
+      </button>
+
+      <button id="pip-btn" class="hidden sm:flex text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white text-xs transition-colors items-center gap-1 p-2 sm:p-1.5" title="PiP">
+        <span class="material-symbols-outlined text-base sm:text-sm">picture_in_picture</span>
+        <span class="hidden lg:inline" id="pip-text">PiP</span>
+      </button>
+
+      <button id="reset-stats" class="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white text-xs transition-colors flex items-center gap-1 p-2 sm:p-1.5" title="Sıfırla">
+        <span class="material-symbols-outlined text-base sm:text-sm">restart_alt</span>
+        <span class="hidden lg:inline">Sıfırla</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex flex-col items-center justify-center px-3 sm:px-4 lg:px-20 gap-4 sm:gap-6 w-full overflow-y-auto pb-20 sm:pb-24">
+    
+    <div class="flex flex-col items-center w-full max-w-[560px] relative mt-2 sm:mt-4">
+      <div class="w-full bg-white/80 dark:bg-white/5 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl sm:rounded-[2rem] p-4 sm:p-6 lg:p-12 shadow-2xl relative overflow-hidden">
+        
+        <div class="relative z-10 flex justify-center mb-6 sm:mb-8 lg:mb-10 w-full">
+          <div class="inline-flex bg-gray-100 dark:bg-black/20 backdrop-blur-md rounded-full p-1 border border-gray-200 dark:border-white/5 w-full sm:w-auto" id="mode-tabs">
+            <button data-mode="pomodoro" class="mode-btn flex-1 sm:flex-none px-3 sm:px-5 py-1.5 sm:py-2 rounded-full bg-primary text-white text-xs sm:text-sm font-bold shadow-lg transition-all">Pomodoro</button>
+            <button data-mode="short" class="mode-btn flex-1 sm:flex-none px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white text-xs sm:text-sm font-medium transition-colors">Mola</button>
+            <button data-mode="long" class="mode-btn flex-1 sm:flex-none px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white text-xs sm:text-sm font-medium transition-colors">Uzun</button>
+          </div>
+        </div>
+
+        <div class="relative z-10 flex flex-col items-center justify-center mb-6 sm:mb-8 lg:mb-10">
+          <div class="relative size-56 sm:size-64 lg:size-72 flex items-center justify-center">
+            <svg class="absolute inset-0 size-full -rotate-90" viewBox="0 0 100 100">
+              <circle class="text-gray-200 dark:text-white/5" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-width="3"></circle>
+            </svg>
+            <svg id="progress-ring" class="absolute inset-0 size-full -rotate-90" viewBox="0 0 100 100">
+              <circle id="progress-bar" cx="50" cy="50" fill="none" r="45" stroke="#ee652b" stroke-dasharray="283" stroke-dashoffset="0" stroke-linecap="round" stroke-width="3"></circle>
+            </svg>
+
+            <div class="flex flex-col items-center z-10">
+              <span id="timer-display" title="Değiştirmek için tıkla" class="text-5xl sm:text-6xl lg:text-8xl font-bold tracking-tighter text-gray-900 dark:text-white font-mono cursor-pointer hover:text-primary transition-colors">25:00</span>
+              <span id="timer-label" class="text-gray-500 dark:text-white/40 text-xs sm:text-sm font-medium tracking-widest uppercase mt-1 sm:mt-2">Odaklanma</span>
+              <span id="session-info" class="text-gray-400 dark:text-white/30 text-xs font-medium mt-1 sm:mt-2">Odak: 0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="relative z-10 flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center w-full">
+          <button id="start-btn" class="w-full sm:flex-1 flex items-center justify-center rounded-xl h-12 sm:h-14 px-6 sm:px-8 bg-primary hover:bg-[#ff7a40] text-white text-sm sm:text-base font-bold shadow-lg transition-all active:scale-[0.98]">
+            <span id="start-icon" class="material-symbols-outlined mr-2">play_arrow</span>
+            <span id="start-text">BAŞLAT</span>
+          </button>
+          <button id="skip-btn" class="w-full sm:flex-1 flex items-center justify-center rounded-xl h-12 sm:h-14 px-6 sm:px-8 bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white/80 text-sm sm:text-base font-bold transition-all active:scale-[0.98]">
+            <span class="material-symbols-outlined mr-2 text-[18px] sm:text-[20px]">skip_next</span> GEÇ
+          </button>
+        </div>
+      </div>
+
+      <p id="quote" class="mt-3 sm:mt-4 lg:mt-6 text-gray-400 dark:text-white/30 text-xs sm:text-sm font-medium italic text-center px-4">
+        "Süreyi değiştirmek için dakikaya tıkla"
+      </p>
+    </div>
+  </main>
+
+  <!-- Bottom Navbar -->
+  <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 pb-3 sm:pb-4">
+    <div class="bg-white/90 dark:bg-white/5 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl px-4 py-3">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <button id="nav-notes" class="flex flex-col items-center justify-center gap-1 px-3 sm:px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 transition-all active:scale-95 group">
+          <span class="material-symbols-outlined text-gray-500 dark:text-white/60 group-hover:text-primary text-xl sm:text-2xl">description</span>
+          <span class="text-gray-500 dark:text-white/60 group-hover:text-gray-900 dark:group-hover:text-white text-[10px] sm:text-xs font-medium">Notlar</span>
+        </button>
+
+        <button id="nav-history" class="flex flex-col items-center justify-center gap-1 px-3 sm:px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 transition-all active:scale-95 group">
+          <span class="material-symbols-outlined text-gray-500 dark:text-white/60 group-hover:text-primary text-xl sm:text-2xl">history</span>
+          <span class="text-gray-500 dark:text-white/60 group-hover:text-gray-900 dark:group-hover:text-white text-[10px] sm:text-xs font-medium">Geçmiş</span>
+        </button>
+
+        <button id="nav-settings" class="flex flex-col items-center justify-center gap-1 px-3 sm:px-4 py-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 transition-all active:scale-95 group">
+          <span class="material-symbols-outlined text-gray-500 dark:text-white/60 group-hover:text-primary text-xl sm:text-2xl">settings</span>
+          <span class="text-gray-500 dark:text-white/60 group-hover:text-gray-900 dark:group-hover:text-white text-[10px] sm:text-xs font-medium">Ayarlar</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+</div>
+
+<!-- App Dialog -->
+<dialog id="app-dialog" class="rounded-2xl p-0 bg-transparent backdrop:bg-black/60">
+  <div class="w-[92vw] max-w-[420px] rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#140f0d]/90 backdrop-blur-xl shadow-2xl">
+    <div class="p-4 sm:p-5 border-b border-gray-200 dark:border-white/10 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <div class="size-7 sm:size-8 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center">
+          <span id="dlg-icon" class="material-symbols-outlined text-primary text-lg sm:text-xl">info</span>
+        </div>
+        <div class="flex flex-col">
+          <div id="dlg-title" class="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">Bilgi</div>
+          <div id="dlg-subtitle" class="text-[10px] sm:text-xs text-gray-500 dark:text-white/50">Pomodoro Focus</div>
+        </div>
+      </div>
+      <button id="dlg-x" class="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white p-1" type="button">
+        <span class="material-symbols-outlined text-[20px] sm:text-[24px]">close</span>
+      </button>
+    </div>
+
+    <div class="p-4 sm:p-5">
+      <div id="dlg-message" class="text-xs sm:text-sm text-gray-700 dark:text-white/80 leading-relaxed"></div>
+      <input id="dlg-input" class="hidden mt-3 sm:mt-4 w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg py-2 sm:py-2.5 px-2.5 sm:px-3 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary/50" />
+
+      <div class="mt-4 sm:mt-5 flex gap-2 sm:gap-3 justify-end">
+        <button id="dlg-cancel" class="hidden px-3 sm:px-4 h-9 sm:h-10 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 text-xs sm:text-sm font-bold text-gray-700 dark:text-white/80" type="button">
+          Vazgeç
+        </button>
+        <button id="dlg-ok" class="px-3 sm:px-4 h-9 sm:h-10 rounded-xl bg-primary hover:bg-[#ff7a40] text-xs sm:text-sm font-bold text-white" type="button">
+          Tamam
+        </button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- Notes Modal -->
+<dialog id="notes-modal" class="rounded-2xl p-0 bg-transparent">
+  <div class="w-[95vw] sm:w-[85vw] lg:w-[900px] max-h-[85vh] rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#140f0d]/95 backdrop-blur-xl shadow-2xl flex flex-col">
+    <div class="flex items-center justify-between p-4 sm:p-5 border-b border-gray-200 dark:border-white/10 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="size-9 sm:size-10 rounded-xl bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-xl sm:text-2xl">description</span>
+        </div>
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-gray-900 dark:text-white">Görevler ve Notlar</h2>
+          <p class="text-[10px] sm:text-xs text-gray-500 dark:text-white/50">Detay eklemek için göreve tıkla</p>
+        </div>
+      </div>
+      <button id="notes-close" class="size-9 sm:size-10 rounded-xl hover:bg-gray-100 dark:hover:bg-white/5 flex items-center justify-center transition-colors">
+        <span class="material-symbols-outlined text-gray-500 dark:text-white/60 hover:text-gray-900 dark:hover:text-white text-xl sm:text-2xl">close</span>
+      </button>
+    </div>
+
+    <div class="flex border-b border-gray-200 dark:border-white/5 px-4 sm:px-5 shrink-0">
+      <button id="tab-tasks" class="tab-btn px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-gray-900 dark:text-white border-b-2 border-primary transition-colors">Görevler</button>
+      <button id="tab-history" class="tab-btn px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-gray-500 dark:text-white/40 hover:text-gray-900 dark:hover:text-white border-b-2 border-transparent transition-colors">Geçmiş</button>
+      <button id="tab-sessions" class="tab-btn px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-gray-500 dark:text-white/40 hover:text-gray-900 dark:hover:text-white border-b-2 border-transparent transition-colors">Session</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 sm:p-5 no-scrollbar">
+      <!-- Tasks Tab -->
+      <div id="content-tasks" class="tab-content max-w-3xl mx-auto">
+        <div class="mb-4">
+          <form id="task-form-modal" class="relative">
+            <input id="task-input-modal" required class="w-full bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl py-2.5 sm:py-3 pl-3 sm:pl-4 pr-10 sm:pr-12 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary/50 transition-all" placeholder="Yeni görev ekle..." type="text"/>
+            <button type="submit" class="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-white/40 hover:text-primary transition-colors">
+              <span class="material-symbols-outlined text-xl sm:text-2xl">add_circle</span>
+            </button>
+          </form>
+        </div>
+
+        <div id="task-list-modal" class="space-y-2.5 sm:space-y-3"></div>
+      </div>
+
+      <!-- History Tab -->
+      <div id="content-history" class="tab-content hidden max-w-3xl mx-auto">
+        <div id="history-list-modal" class="space-y-2.5 sm:space-y-3"></div>
+      </div>
+
+      <!-- Sessions Tab -->
+      <div id="content-sessions" class="tab-content hidden max-w-3xl mx-auto">
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <div class="flex flex-col flex-1">
+            <div class="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">Aktif Session</div>
+            <div class="text-[10px] sm:text-xs text-gray-500 dark:text-white/50">Pomodoro kayıtları session'a yazılır</div>
+          </div>
+          <button id="new-session-btn-modal" class="text-[10px] sm:text-xs font-bold px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg bg-primary hover:bg-[#ff7a40] text-white transition-colors whitespace-nowrap">
+            + Yeni Session
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3 mb-4">
+          <select id="session-select-modal" class="flex-1 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg py-2.5 sm:py-3 px-3 sm:px-4 text-xs sm:text-sm text-gray-900 dark:text-white focus:outline-none focus:border-primary/50 transition-all"></select>
+          <button id="delete-session-btn-modal" class="size-10 sm:size-12 rounded-lg bg-gray-100 hover:bg-red-500/20 dark:bg-white/5 dark:hover:bg-red-500/20 border border-gray-200 dark:border-white/10 hover:border-red-500/50 flex items-center justify-center transition-colors shrink-0">
+            <span class="material-symbols-outlined text-gray-500 dark:text-white/60 hover:text-red-400 text-xl sm:text-2xl">delete</span>
+          </button>
+        </div>
+
+        <div class="p-4 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+          <div class="text-[10px] sm:text-xs text-gray-500 dark:text-white/50 mb-1">Toplam Çalışma Süresi</div>
+          <div class="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white" id="session-total-modal">0 dk</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const STORE_TASKS = 'pomodoro_tasks_v3';
+  const STORE_SETTINGS = 'pomodoro_settings_v3';
+  const STORE_SESSIONS = 'pomodoro_sessions_v1';
+
+  const defaultSettings = {
+    durationsMin: { pomodoro: 25, short: 5, long: 15 },
+    focusSessions: 0,
+    notificationsEnabled: false,
+    autoStartEnabled: false,
+    soundEnabled: true,
+    theme: 'dark' // 'light' or 'dark'
+  };
+  const defaultSessionsState = { activeSessionId: null, sessions: [] };
+
+  const safeParse = (raw, fallback) => { try { return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } };
+  const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
+
+  function loadSettings() {
+    const parsed = safeParse(localStorage.getItem(STORE_SETTINGS), null);
+    if (!parsed) return structuredClone(defaultSettings);
+    return { ...defaultSettings, ...parsed, durationsMin: { ...defaultSettings.durationsMin, ...(parsed.durationsMin || {}) } };
+  }
+  function saveSettings() { localStorage.setItem(STORE_SETTINGS, JSON.stringify(settings)); }
+
+  function loadTasks() {
+    const parsed = safeParse(localStorage.getItem(STORE_TASKS), []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+  function saveTasks() { localStorage.setItem(STORE_TASKS, JSON.stringify(tasks)); }
+
+  function loadSessionsState() {
+    const parsed = safeParse(localStorage.getItem(STORE_SESSIONS), null);
+    if (!parsed || !Array.isArray(parsed.sessions)) return structuredClone(defaultSessionsState);
+    return { ...defaultSessionsState, ...parsed };
+  }
+  function saveSessionsState() { localStorage.setItem(STORE_SESSIONS, JSON.stringify(sessionsState)); }
+
+  function formatTime(sec) {
+    const mins = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(mins).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function minutesFromMs(ms) { return Math.round(ms / 60000); }
+
+  function formatDateTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  }
+
+  function playAlarmSound() {
+    if (!settings.soundEnabled) return;
+    
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = ctx.currentTime;
+      
+      const playNote = (freq, startTime, duration) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.08, startTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+      
+      [0, 0.2, 0.4, 0.7, 0.9, 1.1].forEach((offset) => {
+        playNote(880, now + offset, 0.15);
+        playNote(1047, now + offset + 0.02, 0.13);
+      });
+      
+      setTimeout(() => ctx.close(), 1800);
+    } catch (err) {
+      console.error('Ses çalınamadı:', err);
+    }
+  }
+
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 880;
+      g.gain.value = 0.03;
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start();
+      setTimeout(() => { o.stop(); ctx.close(); }, 120);
+    } catch {}
+  }
+
+  // Theme Management
+  const themeBtn = document.getElementById('theme-btn');
+  const themeIcon = document.getElementById('theme-icon');
+  const themeText = document.getElementById('theme-text');
+  const htmlEl = document.documentElement;
+
+  function applyTheme(theme) {
+    if (theme === 'dark') {
+      htmlEl.classList.add('dark');
+      htmlEl.classList.remove('light');
+    } else {
+      htmlEl.classList.add('light');
+      htmlEl.classList.remove('dark');
+    }
+    updateThemeButtonUI();
+  }
+
+  function toggleTheme() {
+    settings.theme = settings.theme === 'dark' ? 'light' : 'dark';
+    applyTheme(settings.theme);
+    saveSettings();
+  }
+
+  function updateThemeButtonUI() {
+    const isDark = settings.theme === 'dark';
+    themeBtn.classList.toggle('text-gray-900', !isDark);
+    themeBtn.classList.toggle('dark:text-white', isDark);
+    themeBtn.classList.toggle('text-gray-400', isDark);
+    themeBtn.classList.toggle('dark:text-white/40', isDark);
+    
+    if (themeIcon) {
+      themeIcon.textContent = isDark ? 'dark_mode' : 'light_mode';
+    }
+    if (themeText) {
+      themeText.textContent = isDark ? 'Koyu' : 'Açık';
+    }
+  }
+
+  const modal = (() => {
+    let busy = false;
+
+    function get() {
+      const dlg = document.getElementById('app-dialog');
+      if (!dlg) return null;
+      return {
+        dlg,
+        title: document.getElementById('dlg-title'),
+        subtitle: document.getElementById('dlg-subtitle'),
+        message: document.getElementById('dlg-message'),
+        icon: document.getElementById('dlg-icon'),
+        ok: document.getElementById('dlg-ok'),
+        cancel: document.getElementById('dlg-cancel'),
+        x: document.getElementById('dlg-x'),
+        input: document.getElementById('dlg-input')
+      };
+    }
+
+    function base(d, { title='Bilgi', subtitle='Pomodoro Focus', message='', icon='info', showCancel=false, showInput=false, inputValue='' }) {
+      d.title && (d.title.textContent = title);
+      d.subtitle && (d.subtitle.textContent = subtitle);
+      d.message.textContent = message;
+      d.icon && (d.icon.textContent = icon);
+
+      if (d.cancel) d.cancel.classList.toggle('hidden', !showCancel);
+
+      if (d.input) {
+        d.input.classList.toggle('hidden', !showInput);
+        if (showInput) {
+          d.input.value = inputValue ?? '';
+          queueMicrotask(() => { d.input.focus(); d.input.select(); });
+        }
+      }
+    }
+
+    async function alert(message, opts={}) {
+      const d = get();
+      if (!d) { console.error('Dialog eksik!'); return true; }
+
+      while (busy) await new Promise(r => setTimeout(r, 30));
+      busy = true;
+
+      return new Promise((resolve) => {
+        base(d, { message, showCancel:false, showInput:false, ...opts });
+        d.ok.textContent = 'Tamam';
+
+        const cleanup = () => {
+          d.ok.removeEventListener('click', onOk);
+          d.x?.removeEventListener('click', onOk);
+          d.dlg.removeEventListener('cancel', onOk);
+          busy = false;
+        };
+        const onOk = () => { cleanup(); d.dlg.close(); resolve(true); };
+
+        d.ok.addEventListener('click', onOk);
+        d.x?.addEventListener('click', onOk);
+        d.dlg.addEventListener('cancel', onOk);
+
+        if (!d.dlg.open) d.dlg.showModal();
+      });
+    }
+
+    async function confirm(message, opts={}) {
+      const d = get();
+      if (!d) { console.error('Dialog eksik!'); return false; }
+
+      while (busy) await new Promise(r => setTimeout(r, 30));
+      busy = true;
+
+      return new Promise((resolve) => {
+        base(d, { message, showCancel:true, showInput:false, ...opts });
+        d.ok.textContent = 'Onayla';
+        d.cancel && (d.cancel.textContent = 'Vazgeç');
+
+        const cleanup = () => {
+          d.ok.removeEventListener('click', onOk);
+          d.cancel?.removeEventListener('click', onCancel);
+          d.x?.removeEventListener('click', onCancel);
+          d.dlg.removeEventListener('cancel', onCancel);
+          busy = false;
+        };
+        const onOk = () => { cleanup(); d.dlg.close(); resolve(true); };
+        const onCancel = () => { cleanup(); d.dlg.close(); resolve(false); };
+
+        d.ok.addEventListener('click', onOk);
+        d.cancel?.addEventListener('click', onCancel);
+        d.x?.addEventListener('click', onCancel);
+        d.dlg.addEventListener('cancel', onCancel);
+
+        if (!d.dlg.open) d.dlg.showModal();
+      });
+    }
+
+    async function prompt(message, defaultValue='', opts={}) {
+      const d = get();
+      if (!d || !d.input) { console.error('Dialog/input eksik!'); return null; }
+
+      while (busy) await new Promise(r => setTimeout(r, 30));
+      busy = true;
+
+      return new Promise((resolve) => {
+        base(d, { message, showCancel:true, showInput:true, inputValue: defaultValue, ...opts });
+        d.ok.textContent = 'Kaydet';
+        d.cancel && (d.cancel.textContent = 'Vazgeç');
+
+        const cleanup = () => {
+          d.ok.removeEventListener('click', onOk);
+          d.cancel?.removeEventListener('click', onCancel);
+          d.x?.removeEventListener('click', onCancel);
+          d.dlg.removeEventListener('cancel', onCancel);
+          d.input.removeEventListener('keydown', onEnter);
+          busy = false;
+        };
+        const onOk = () => { const v = d.input.value; cleanup(); d.dlg.close(); resolve(v); };
+        const onCancel = () => { cleanup(); d.dlg.close(); resolve(null); };
+        const onEnter = (e) => { if (e.key === 'Enter') onOk(); };
+
+        d.ok.addEventListener('click', onOk);
+        d.cancel?.addEventListener('click', onCancel);
+        d.x?.addEventListener('click', onCancel);
+        d.dlg.addEventListener('cancel', onCancel);
+        d.input.addEventListener('keydown', onEnter);
+
+        if (!d.dlg.open) d.dlg.showModal();
+      });
+    }
+
+    return { alert, confirm, prompt };
+  })();
+
+  let settings = loadSettings();
+  let tasks = loadTasks();
+  let sessionsState = loadSessionsState();
+
+  const modes = {
+    pomodoro: { label: 'Odaklanma', color: '#ee652b' },
+    short: { label: 'Mola', color: '#38bdf8' },
+    long: { label: 'Uzun Mola', color: '#818cf8' }
+  };
+
+  let currentMode = 'pomodoro';
+  let timeLeftSec = (settings.durationsMin[currentMode] || 25) * 60;
+  let timerId = null;
+  let endAtMs = null;
+  let pausedAtMs = null;
+
+  const RING = 283;
+
+  const timerDisplay = document.getElementById('timer-display');
+  const timerLabel = document.getElementById('timer-label');
+  const sessionInfo = document.getElementById('session-info');
+  const progressBar = document.getElementById('progress-bar');
+  const startBtn = document.getElementById('start-btn');
+  const skipBtn = document.getElementById('skip-btn');
+  const modeBtns = document.querySelectorAll('.mode-btn');
+  const resetBtn = document.getElementById('reset-stats');
+  const enableNotifBtn = document.getElementById('enable-notifications');
+  const notifText = document.getElementById('notif-text');
+  const autoStartBtn = document.getElementById('auto-start-btn');
+  const autoStartText = document.getElementById('auto-start-text');
+  const soundBtn = document.getElementById('sound-btn');
+  const soundIcon = document.getElementById('sound-icon');
+  const soundText = document.getElementById('sound-text');
+  const pipBtn = document.getElementById('pip-btn');
+  const pipText = document.getElementById('pip-text');
+
+  const notesModal = document.getElementById('notes-modal');
+  const navNotes = document.getElementById('nav-notes');
+  const navHistory = document.getElementById('nav-history');
+  const navSettings = document.getElementById('nav-settings');
+  const notesClose = document.getElementById('notes-close');
+  const taskListModal = document.getElementById('task-list-modal');
+  const taskFormModal = document.getElementById('task-form-modal');
+  const taskInputModal = document.getElementById('task-input-modal');
+  const historyListModal = document.getElementById('history-list-modal');
+  const sessionSelectModal = document.getElementById('session-select-modal');
+  const sessionTotalModal = document.getElementById('session-total-modal');
+  const newSessionBtnModal = document.getElementById('new-session-btn-modal');
+  const deleteSessionBtnModal = document.getElementById('delete-session-btn-modal');
+
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.id.replace('tab-', 'content-');
+      
+      tabBtns.forEach(b => {
+        b.classList.remove('text-gray-900', 'dark:text-white', 'border-primary');
+        b.classList.add('text-gray-500', 'dark:text-white/40', 'border-transparent');
+      });
+      
+      btn.classList.remove('text-gray-500', 'dark:text-white/40', 'border-transparent');
+      btn.classList.add('text-gray-900', 'dark:text-white', 'border-primary');
+      
+      tabContents.forEach(c => c.classList.add('hidden'));
+      document.getElementById(target)?.classList.remove('hidden');
+    });
+  });
+
+  function ensureDefaultSession() {
+    if (sessionsState.sessions.length > 0) {
+      if (!sessionsState.activeSessionId) sessionsState.activeSessionId = sessionsState.sessions[0].id;
+      return;
+    }
+    const id = uid();
+    sessionsState.sessions.push({ id, name: 'Genel', createdAt: Date.now(), records: [] });
+    sessionsState.activeSessionId = id;
+    saveSessionsState();
+  }
+
+  function getActiveSession() {
+    return sessionsState.sessions.find(s => s.id === sessionsState.activeSessionId) || null;
+  }
+
+  function setActiveSession(id) {
+    sessionsState.activeSessionId = id;
+    saveSessionsState();
+    renderSessionsUI();
+    renderHistoryUI();
+  }
+
+  function addSession(name) {
+    const id = uid();
+    sessionsState.sessions.unshift({ id, name, createdAt: Date.now(), records: [] });
+    sessionsState.activeSessionId = id;
+    saveSessionsState();
+    renderSessionsUI();
+    renderHistoryUI();
+  }
+
+  async function deleteActiveSession() {
+    const s = getActiveSession();
+    if (!s) return;
+    const ok = await modal.confirm(`"${s.name}" session silinsin mi?`, { title:'Session Sil', icon:'delete' });
+    if (!ok) return;
+
+    sessionsState.sessions = sessionsState.sessions.filter(x => x.id !== s.id);
+    sessionsState.activeSessionId = sessionsState.sessions[0]?.id || null;
+    saveSessionsState();
+    ensureDefaultSession();
+    renderSessionsUI();
+    renderHistoryUI();
+  }
+
+  function calcSessionTotalMs(session) {
+    return (session.records || []).reduce((sum, r) => sum + (r.durationMs || 0), 0);
+  }
+
+  function renderSessionsUI() {
+    if (!sessionSelectModal) return;
+    sessionSelectModal.innerHTML = '';
+    sessionsState.sessions.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      if (s.id === sessionsState.activeSessionId) opt.selected = true;
+      sessionSelectModal.appendChild(opt);
+    });
+
+    const active = getActiveSession();
+    const totalMs = active ? calcSessionTotalMs(active) : 0;
+    sessionTotalModal.textContent = `${minutesFromMs(totalMs)} dk`;
+  }
+
+  function renderHistoryUI() {
+    if (!historyListModal) return;
+    historyListModal.innerHTML = '';
+
+    const active = getActiveSession();
+    if (!active) return;
+
+    const records = [...(active.records || [])].sort((a,b) => b.endAt - a.endAt).slice(0, 50);
+    if (records.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'text-xs sm:text-sm text-gray-500 dark:text-white/40 text-center py-8';
+      empty.textContent = 'Henüz kayıt yok.';
+      historyListModal.appendChild(empty);
+      return;
+    }
+
+    records.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'p-3 sm:p-4 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-between gap-3';
+
+      const left = document.createElement('div');
+      left.className = 'flex flex-col flex-1';
+
+      const t1 = document.createElement('div');
+      t1.className = 'text-xs sm:text-sm text-gray-900 dark:text-white font-semibold mb-1';
+      t1.textContent = `${minutesFromMs(r.durationMs)} dakika odaklanma`;
+
+      const t2 = document.createElement('div');
+      t2.className = 'text-[10px] sm:text-xs text-gray-500 dark:text-white/40';
+      t2.textContent = `${formatDateTime(r.startAt)} → ${formatDateTime(r.endAt)}`;
+
+      left.append(t1, t2);
+
+      const badge = document.createElement('div');
+      badge.className = 'text-[10px] sm:text-xs px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg bg-primary/20 border border-primary/30 text-primary font-semibold';
+      badge.textContent = r.mode || 'pomodoro';
+
+      row.append(left, badge);
+      historyListModal.appendChild(row);
+    });
+  }
+
+  function recordCompletedPomodoro(durationSec) {
+    const active = getActiveSession();
+    if (!active) return;
+
+    const endAt = Date.now();
+    const record = { id: uid(), mode: 'pomodoro', startAt: endAt - durationSec * 1000, endAt, durationMs: durationSec * 1000 };
+
+    if (!Array.isArray(active.records)) active.records = [];
+    active.records.push(record);
+
+    saveSessionsState();
+    renderSessionsUI();
+    renderHistoryUI();
+  }
+
+  async function enableNotificationsFlow() {
+    if (!('Notification' in window)) {
+      await modal.alert('Tarayıcı bildirimleri desteklemiyor.', { title:'Bildirim', icon:'notifications' });
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    settings.notificationsEnabled = (permission === 'granted');
+    saveSettings();
+    updateNotifButtonUI();
+    if (settings.notificationsEnabled) {
+      try { new Notification('Bildirimler aktif', { body: 'Pomodoro bitince bildirim alacaksın.' }); } catch {}
+    }
+  }
+
+  function updateNotifButtonUI() {
+    const isEnabled = settings.notificationsEnabled;
+    enableNotifBtn.classList.toggle('text-gray-900', isEnabled && settings.theme === 'light');
+    enableNotifBtn.classList.toggle('dark:text-white', isEnabled && settings.theme === 'dark');
+    enableNotifBtn.classList.toggle('text-gray-400', !isEnabled && settings.theme === 'light');
+    enableNotifBtn.classList.toggle('dark:text-white/40', !isEnabled && settings.theme === 'dark');
+    if (notifText) {
+      notifText.textContent = isEnabled ? 'Açık' : 'Bildirimler';
+    }
+  }
+
+  function notify(title, body) {
+    if (!settings.notificationsEnabled) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    try { new Notification(title, { body }); } catch {}
+  }
+
+  function toggleSound() {
+    settings.soundEnabled = !settings.soundEnabled;
+    saveSettings();
+    updateSoundButtonUI();
+    
+    if (settings.soundEnabled) {
+      playAlarmSound();
+    }
+  }
+
+  function updateSoundButtonUI() {
+    const isEnabled = settings.soundEnabled;
+    soundBtn.classList.toggle('text-gray-900', isEnabled && settings.theme === 'light');
+    soundBtn.classList.toggle('dark:text-white', isEnabled && settings.theme === 'dark');
+    soundBtn.classList.toggle('text-gray-400', !isEnabled && settings.theme === 'light');
+    soundBtn.classList.toggle('dark:text-white/40', !isEnabled && settings.theme === 'dark');
+    
+    if (soundIcon) {
+      soundIcon.textContent = isEnabled ? 'volume_up' : 'volume_off';
+    }
+    if (soundText) {
+      soundText.textContent = isEnabled ? 'Ses Açık' : 'Ses Kapalı';
+    }
+  }
+
+  function toggleAutoStart() {
+    settings.autoStartEnabled = !settings.autoStartEnabled;
+    saveSettings();
+    updateAutoStartButtonUI();
+  }
+
+  function updateAutoStartButtonUI() {
+    const isEnabled = settings.autoStartEnabled;
+    autoStartBtn.classList.toggle('text-gray-900', isEnabled && settings.theme === 'light');
+    autoStartBtn.classList.toggle('dark:text-white', isEnabled && settings.theme === 'dark');
+    autoStartBtn.classList.toggle('text-gray-400', !isEnabled && settings.theme === 'light');
+    autoStartBtn.classList.toggle('dark:text-white/40', !isEnabled && settings.theme === 'dark');
+    if (autoStartText) autoStartText.textContent = isEnabled ? 'Açık' : 'Otomatik';
+  }
+
+  function modeTotalSec(mode) { return (settings.durationsMin[mode] || 1) * 60; }
+
+  function updateStartButton() {
+    const iconEl = document.getElementById('start-icon');
+    const textEl = document.getElementById('start-text');
+    if (!iconEl || !textEl) return;
+
+    if (timerId) {
+      iconEl.textContent = 'pause';
+      textEl.textContent = 'DURAKLAT';
+    } else {
+      iconEl.textContent = 'play_arrow';
+      textEl.textContent = pausedAtMs ? 'DEVAM' : 'BAŞLAT';
+    }
+  }
+
+  function updateDisplay() {
+    timerDisplay.textContent = formatTime(timeLeftSec);
+    timerLabel.textContent = modes[currentMode].label;
+    sessionInfo.textContent = `Odak: ${settings.focusSessions}`;
+    document.title = `${formatTime(timeLeftSec)} - Pomodoro`;
+    sendTimerStateToPip();
+  }
+
+  function updateProgress() {
+    const total = modeTotalSec(currentMode);
+    const elapsed = total - timeLeftSec;
+    const offset = RING - (RING * elapsed) / total;
+    progressBar.style.strokeDashoffset = String(Math.max(0, Math.min(RING, offset)));
+    progressBar.style.stroke = modes[currentMode].color;
+  }
+
+  function setActiveTab(mode) {
+    modeBtns.forEach(btn => {
+      const isActive = btn.dataset.mode === mode;
+      btn.classList.toggle('bg-primary', isActive);
+      btn.classList.toggle('text-white', isActive);
+      btn.classList.toggle('text-gray-600', !isActive && settings.theme === 'light');
+      btn.classList.toggle('dark:text-white/60', !isActive && settings.theme === 'dark');
+    });
+  }
+
+  function initTimer() {
+    timeLeftSec = modeTotalSec(currentMode);
+    endAtMs = null;
+    pausedAtMs = null;
+    updateStartButton();
+    updateDisplay();
+    updateProgress();
+  }
+
+  function startTimer() {
+    if (timerId) return;
+
+    const now = Date.now();
+    if (!endAtMs) endAtMs = now + timeLeftSec * 1000;
+    if (pausedAtMs) { endAtMs += (now - pausedAtMs); pausedAtMs = null; }
+
+    timerId = setInterval(() => {
+      const remainingMs = endAtMs - Date.now();
+      timeLeftSec = Math.max(0, Math.ceil(remainingMs / 1000));
+      updateDisplay();
+      updateProgress();
+      if (timeLeftSec <= 0) finishTimer();
+    }, 250);
+
+    updateStartButton();
+    sendTimerStateToPip();
+  }
+
+  function pauseTimer() {
+    if (!timerId) return;
+    clearInterval(timerId);
+    timerId = null;
+    pausedAtMs = Date.now();
+    updateStartButton();
+    sendTimerStateToPip();
+  }
+
+  function stopTimerUIReset() {
+    if (timerId) clearInterval(timerId);
+    timerId = null;
+    endAtMs = null;
+    pausedAtMs = null;
+    updateStartButton();
+    sendTimerStateToPip();
+  }
+
+  function toggleTimer() {
+    if (timerId) pauseTimer();
+    else startTimer();
+  }
+
+  async function finishTimer() {
+    stopTimerUIReset();
+    
+    playAlarmSound();
+    
+    notify('Süre bitti', `${modes[currentMode].label} tamamlandı.`);
+
+    if (currentMode === 'pomodoro') {
+      recordCompletedPomodoro(modeTotalSec('pomodoro'));
+      settings.focusSessions += 1;
+      saveSettings();
+
+      if (!settings.autoStartEnabled) {
+        await modal.alert('Pomodoro tamamlandı!', { title:'Bitti', icon:'timer' });
+      }
+
+      const next = (settings.focusSessions % 4 === 0) ? 'long' : 'short';
+      switchMode(next, true);
+
+      if (settings.autoStartEnabled) startTimer();
+    } else {
+      if (!settings.autoStartEnabled) {
+        await modal.alert('Mola bitti!', { title:'Bitti', icon:'coffee' });
+      }
+
+      switchMode('pomodoro', true);
+      if (settings.autoStartEnabled) startTimer();
+    }
+  }
+
+  function switchMode(mode, silent=false) {
+    currentMode = mode;
+    setActiveTab(mode);
+    stopTimerUIReset();
+    initTimer();
+    if (!silent) beep();
+  }
+
+  function renderTasks() {
+    taskListModal.innerHTML = '';
+    
+    if (tasks.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'text-xs sm:text-sm text-gray-500 dark:text-white/40 text-center py-8';
+      empty.textContent = 'Henüz görev yok. Yukarıdan ekleyebilirsin!';
+      taskListModal.appendChild(empty);
+      return;
+    }
+
+    tasks.forEach((task, index) => {
+      const card = document.createElement('div');
+      card.className = `flex flex-col gap-2.5 sm:gap-3 p-3 sm:p-4 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/5 group transition-all ${task.completed ? 'task-done' : ''}`;
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2.5 sm:gap-3';
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = `size-5 sm:size-6 rounded-full border-2 ${task.completed ? 'bg-primary border-primary' : 'border-gray-300 dark:border-white/20'} flex items-center justify-center shrink-0`;
+      toggleBtn.type = 'button';
+      toggleBtn.addEventListener('click', () => {
+        tasks[index].completed = !tasks[index].completed;
+        saveTasks();
+        renderTasks();
+      });
+
+      const checkIcon = document.createElement('span');
+      checkIcon.className = `material-symbols-outlined text-[14px] sm:text-[16px] text-white ${task.completed ? '' : 'hidden'}`;
+      checkIcon.textContent = 'check';
+      toggleBtn.appendChild(checkIcon);
+
+      const text = document.createElement('span');
+      text.className = `text-xs sm:text-sm font-medium flex-1 text-gray-900 dark:text-white ${task.completed ? 'line-through' : ''}`;
+      text.textContent = task.text ?? '';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'text-gray-300 dark:text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1';
+      delBtn.type = 'button';
+      delBtn.addEventListener('click', async () => {
+        const ok = await modal.confirm('Görev silinsin mi?', { title:'Sil', icon:'delete' });
+        if (!ok) return;
+        tasks.splice(index, 1);
+        saveTasks();
+        renderTasks();
+      });
+
+      const delIcon = document.createElement('span');
+      delIcon.className = 'material-symbols-outlined text-[16px] sm:text-[18px]';
+      delIcon.textContent = 'delete';
+      delBtn.appendChild(delIcon);
+
+      row.append(toggleBtn, text, delBtn);
+
+      const ta = document.createElement('textarea');
+      ta.placeholder = 'Not ekle...';
+      ta.className = 'w-full bg-gray-100 dark:bg-black/20 border-none rounded-lg p-2.5 sm:p-3 text-[10px] sm:text-xs text-gray-600 dark:text-white/60 focus:text-gray-900 dark:focus:text-white focus:ring-1 focus:ring-primary/30 resize-none no-scrollbar min-h-[50px] sm:min-h-[60px]';
+      ta.value = task.note ?? '';
+      ta.addEventListener('change', (e) => {
+        tasks[index].note = e.target.value;
+        saveTasks();
+      });
+
+      card.append(row, ta);
+      taskListModal.appendChild(card);
+    });
+  }
+
+  let pipWin = null;
+
+  function isDocumentPipSupported() {
+    return !!window.documentPictureInPicture?.requestWindow;
+  }
+
+  function sendTimerStateToPip() {
+    if (!pipWin || pipWin.closed) return;
+    pipWin.postMessage({
+      type: 'TIMER_STATE',
+      payload: {
+        label: modes[currentMode].label,
+        color: modes[currentMode].color,
+        timeLeftSec,
+        running: !!timerId
+      }
+    }, '*');
+  }
+
+  function updatePipButtonUI() {
+    const isOpen = pipWin && !pipWin.closed;
+    pipBtn.classList.toggle('text-gray-900', isOpen && settings.theme === 'light');
+    pipBtn.classList.toggle('dark:text-white', isOpen && settings.theme === 'dark');
+    pipBtn.classList.toggle('text-gray-400', !isOpen && settings.theme === 'light');
+    pipBtn.classList.toggle('dark:text-white/40', !isOpen && settings.theme === 'dark');
+    if (pipText) {
+      pipText.textContent = isOpen ? 'Açık' : 'PiP';
+    }
+  }
+
+  async function openTimerPip() {
+    if (!isDocumentPipSupported()) {
+      await modal.alert('PiP desteklenmiyor (Chrome/Edge + HTTPS gerekir).', { title:'PiP', icon:'warning' });
+      return;
+    }
+
+    try {
+      if (pipWin && !pipWin.closed) {
+        pipWin.close();
+        pipWin = null;
+        updatePipButtonUI();
+        return;
+      }
+
+      pipWin = await window.documentPictureInPicture.requestWindow({
+        width: 340,
+        height: 240,
+        disallowReturnToOpener: true
+      });
+
+      pipWin.document.head.innerHTML = `
+        <meta charset="utf-8" />
+        <title>⏱ Pomodoro</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          :root { color-scheme: dark; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #0f0b09;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+          }
+          .card { 
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 12px;
+          }
+          .top { 
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }
+          .badge { 
+            font-size: 11px;
+            opacity: 0.6;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 600;
+          }
+          .time { 
+            font-size: 64px;
+            font-weight: 900;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            text-align: center;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .btnrow { 
+            display: flex;
+            gap: 8px;
+          }
+          button { 
+            flex: 1;
+            height: 48px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-weight: 800;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          button:hover { 
+            background: rgba(0,0,0,0.5);
+            border-color: rgba(255,255,255,0.2);
+          }
+          button:active { 
+            transform: scale(0.97);
+          }
+          button.primary { 
+            border: none;
+          }
+        </style>
+      `;
+
+      pipWin.document.body.innerHTML = `
+        <div class="card">
+          <div class="top">
+            <div class="badge" id="pip-label">Odaklanma</div>
+            <div class="badge" id="pip-status">DURDU</div>
+          </div>
+          <div class="time" id="pip-time">25:00</div>
+          <div class="btnrow">
+            <button id="pip-toggle" class="primary">BAŞLAT</button>
+            <button id="pip-close">KAPAT</button>
+          </div>
+        </div>
+      `;
+
+      pipWin.document.getElementById('pip-toggle').addEventListener('click', () => {
+        toggleTimer();
+        sendTimerStateToPip();
+      });
+
+      pipWin.document.getElementById('pip-close').addEventListener('click', () => pipWin.close());
+
+      pipWin.addEventListener('message', (e) => {
+        if (!e.data || e.data.type !== 'TIMER_STATE') return;
+        const { label, color, timeLeftSec, running } = e.data.payload;
+
+        const labelEl = pipWin.document.getElementById('pip-label');
+        const timeEl = pipWin.document.getElementById('pip-time');
+        const statusEl = pipWin.document.getElementById('pip-status');
+        const toggleBtn = pipWin.document.getElementById('pip-toggle');
+
+        if (labelEl) labelEl.textContent = label;
+        if (timeEl) timeEl.textContent = formatTime(timeLeftSec);
+        if (statusEl) statusEl.textContent = running ? 'ÇALIŞIYOR' : 'DURDU';
+        if (toggleBtn) {
+          toggleBtn.textContent = running ? 'DURAKLAT' : 'BAŞLAT';
+          toggleBtn.style.background = color;
+          toggleBtn.style.color = '#fff';
+        }
+      });
+
+      pipWin.addEventListener('pagehide', () => { 
+        pipWin = null; 
+        updatePipButtonUI();
+      });
+      
+      updatePipButtonUI();
+      sendTimerStateToPip();
+    } catch (err) {
+      pipWin = null;
+      updatePipButtonUI();
+      await modal.alert(`PiP açılamadı: ${err?.name || 'Hata'}`, { title:'PiP', icon:'error' });
+    }
+  }
+
+  startBtn.addEventListener('click', toggleTimer);
+
+  skipBtn.addEventListener('click', async () => {
+    const ok = await modal.confirm('Geçmek istiyor musun?', { title:'Onay', icon:'skip_next' });
+    if (!ok) return;
+    if (currentMode === 'pomodoro') switchMode('short');
+    else switchMode('pomodoro');
+  });
+
+  modeBtns.forEach(btn => btn.addEventListener('click', () => switchMode(btn.dataset.mode)));
+
+  timerDisplay.addEventListener('click', async () => {
+    if (timerId) return;
+    const currentMin = settings.durationsMin[currentMode];
+    const input = await modal.prompt('Yeni süre (dakika):', String(currentMin), { title:'Süre', icon:'edit' });
+    if (input === null) return;
+
+    const n = Number(input);
+    if (!Number.isFinite(n) || n <= 0 || n > 180) {
+      await modal.alert('Geçerli bir değer gir (1-180).', { title:'Hata', icon:'error' });
+      return;
+    }
+    settings.durationsMin[currentMode] = Math.round(n);
+    saveSettings();
+    initTimer();
+  });
+
+  taskFormModal.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = taskInputModal.value.trim();
+    if (!text) return;
+    tasks.push({ text, completed: false, note: '' });
+    taskInputModal.value = '';
+    saveTasks();
+    renderTasks();
+  });
+
+  newSessionBtnModal?.addEventListener('click', async () => {
+    const name = await modal.prompt('Session adı:', '', { title:'Yeni', icon:'folder' });
+    if (!name) return;
+    addSession(name.trim());
+  });
+
+  sessionSelectModal?.addEventListener('change', (e) => setActiveSession(e.target.value));
+  deleteSessionBtnModal?.addEventListener('click', deleteActiveSession);
+
+  resetBtn.addEventListener('click', async () => {
+    const ok = await modal.confirm('Tüm veriler silinecek. Emin misin?', { title:'Sıfırla', icon:'restart_alt' });
+    if (!ok) return;
+
+    localStorage.removeItem(STORE_TASKS);
+    localStorage.removeItem(STORE_SETTINGS);
+    localStorage.removeItem(STORE_SESSIONS);
+
+    tasks = [];
+    settings = structuredClone(defaultSettings);
+    sessionsState = loadSessionsState();
+
+    currentMode = 'pomodoro';
+    setActiveTab(currentMode);
+    stopTimerUIReset();
+    initTimer();
+
+    ensureDefaultSession();
+    renderSessionsUI();
+    renderHistoryUI();
+    renderTasks();
+    applyTheme(settings.theme);
+    updateNotifButtonUI();
+    updateAutoStartButtonUI();
+    updateSoundButtonUI();
+    updatePipButtonUI();
+
+    await modal.alert('Tüm veriler silindi.', { title:'Tamam', icon:'check_circle' });
+  });
+
+  enableNotifBtn.addEventListener('click', enableNotificationsFlow);
+  autoStartBtn.addEventListener('click', toggleAutoStart);
+  soundBtn.addEventListener('click', toggleSound);
+  themeBtn.addEventListener('click', toggleTheme);
+  pipBtn?.addEventListener('click', openTimerPip);
+
+  navNotes.addEventListener('click', () => {
+    renderTasks();
+    renderSessionsUI();
+    renderHistoryUI();
+    notesModal.showModal();
+  });
+
+  navHistory.addEventListener('click', () => {
+    renderHistoryUI();
+    notesModal.showModal();
+    document.getElementById('tab-history').click();
+  });
+
+  navSettings.addEventListener('click', () => {
+    renderSessionsUI();
+    notesModal.showModal();
+    document.getElementById('tab-sessions').click();
+  });
+
+  notesClose.addEventListener('click', () => notesModal.close());
+
+  document.addEventListener('visibilitychange', () => {
+    if (!timerId || !endAtMs) return;
+    const remainingMs = endAtMs - Date.now();
+    timeLeftSec = Math.max(0, Math.ceil(remainingMs / 1000));
+    updateDisplay();
+    updateProgress();
+  });
+
+  function initUI() {
+    applyTheme(settings.theme);
+    ensureDefaultSession();
+    renderSessionsUI();
+    renderHistoryUI();
+    setActiveTab(currentMode);
+    initTimer();
+    renderTasks();
+    updateNotifButtonUI();
+    updateAutoStartButtonUI();
+    updateSoundButtonUI();
+    updatePipButtonUI();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initUI);
+  else initUI();
+})();
+</script>
+
+</body>
+</html>
